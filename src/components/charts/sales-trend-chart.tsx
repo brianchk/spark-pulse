@@ -295,6 +295,7 @@ export function SalesTrendChart({ initialData }: { initialData?: TrendResponse |
         getColor={getColor}
         focusedPeriod={focusedPeriod}
         focusedLabel={focusedLabel}
+        granularity={granularity}
         onGroupHover={handleGroupHover}
       />
     </div>
