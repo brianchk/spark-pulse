@@ -40,19 +40,25 @@ function formatDateLabel(label: string, granularity: string): string {
   return label;
 }
 
-export function SalesTrendChart() {
+export function SalesTrendChart({ initialData }: { initialData?: TrendResponse | null }) {
   const [granularity, setGranularity] = useState<Granularity>("weekly");
   const [sameStore, setSameStore] = useState(false);
 
   const periods = GRANULARITY_OPTIONS.find((o) => o.value === granularity)!.defaultPeriods;
 
-  const { data, isLoading, error } = usePulseQuery<TrendResponse>(
+  // Use server-prefetched data for the default state (weekly, all stores)
+  const isDefaultState = granularity === "weekly" && !sameStore;
+
+  const { data: fetchedData, isLoading, error } = usePulseQuery<TrendResponse>(
     ["sales", "trend", granularity, String(sameStore)],
     {
       endpoint: "sales/trend",
       params: { granularity, periods, same_store: sameStore ? "true" : "false" },
-    }
+    },
+    { enabled: !isDefaultState || !initialData }
   );
+
+  const data = isDefaultState && initialData ? initialData : fetchedData;
 
   // Controls bar
   const controls = (
