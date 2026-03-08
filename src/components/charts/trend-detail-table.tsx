@@ -35,8 +35,8 @@ export function TrendDetailTable({
   focusedLabel,
   onGroupHover,
 }: TrendDetailTableProps) {
-  const { rows, totalCy, totalPy } = useMemo(() => {
-    const result: TableRow[] = [];
+  const { gainers, decliners, totalCy, totalPy } = useMemo(() => {
+    const all: TableRow[] = [];
     const n = data.labels.length;
 
     for (const g of groups) {
@@ -52,7 +52,7 @@ export function TrendDetailTable({
         py = n > 0 ? pyArr.reduce((s, v) => s + v, 0) / n : 0;
       }
 
-      result.push({
+      all.push({
         name: g,
         cy,
         py,
@@ -63,19 +63,77 @@ export function TrendDetailTable({
       });
     }
 
-    const tCy = result.reduce((s, r) => s + Math.max(r.cy, 0), 0);
-    const tPy = result.reduce((s, r) => s + Math.max(r.py, 0), 0);
-    for (const r of result) {
+    const tCy = all.reduce((s, r) => s + Math.max(r.cy, 0), 0);
+    const tPy = all.reduce((s, r) => s + Math.max(r.py, 0), 0);
+    for (const r of all) {
       r.share = tCy > 0 ? (Math.max(r.cy, 0) / tCy) * 100 : 0;
     }
 
-    result.sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta));
-    return { rows: result, totalCy: tCy, totalPy: tPy };
+    // Split into gainers (delta >= 0, sorted biggest first) and decliners (delta < 0, sorted biggest drop first)
+    const g = all.filter((r) => r.delta >= 0).sort((a, b) => b.delta - a.delta);
+    const d = all.filter((r) => r.delta < 0).sort((a, b) => a.delta - b.delta);
+
+    return { gainers: g, decliners: d, totalCy: tCy, totalPy: tPy };
   }, [data, groups, getColor, focusedPeriod]);
 
   const totalDelta = totalCy - totalPy;
   const totalDeltaPct = totalPy > 0 ? (totalDelta / totalPy) * 100 : null;
-  const clr = (d: number) => (d >= 0 ? "#4ade80" : "#f87171");
+  const maxAbsDelta = Math.max(...[...gainers, ...decliners].map((r) => Math.abs(r.delta)), 1);
+
+  const renderRow = (row: TableRow) => {
+    const barWidth = Math.min((Math.abs(row.delta) / maxAbsDelta) * 100, 100);
+    const isGain = row.delta >= 0;
+    const clr = isGain ? "#4ade80" : "#f87171";
+
+    return (
+      <tr
+        key={row.name}
+        className="border-b border-border/40 transition-colors hover:bg-muted/40"
+        onMouseEnter={() => onGroupHover(row.name)}
+        onMouseLeave={() => onGroupHover(null)}
+      >
+        <td className="p-1.5 text-center">
+          <span className="inline-block h-3 w-3 rounded-sm" style={{ backgroundColor: row.color }} />
+        </td>
+        <td className="p-1.5 font-medium text-card-foreground">{row.name}</td>
+        <td className="p-1.5 text-right tabular-nums">{formatCurrency(row.cy)}</td>
+        <td className="w-20 p-1.5">
+          <div className="flex items-center gap-1">
+            <div
+              className="h-2.5 rounded-sm"
+              style={{
+                width: `${barWidth}%`,
+                backgroundColor: clr,
+                minWidth: row.delta !== 0 ? 3 : 0,
+              }}
+            />
+          </div>
+        </td>
+        <td className="p-1.5 text-right tabular-nums" style={{ color: clr }}>
+          {isGain ? "+" : "-"}
+          {formatCurrency(Math.abs(row.delta))}
+        </td>
+        <td className="p-1.5 text-right tabular-nums" style={{ color: clr }}>
+          {row.deltaPct !== null ? formatPercent(row.deltaPct, true) : "\u2014"}
+        </td>
+        <td className="p-1.5 text-right tabular-nums text-muted-foreground">{row.share.toFixed(0)}%</td>
+      </tr>
+    );
+  };
+
+  const tableHeader = (
+    <tr className="border-b border-border bg-muted/30 text-muted-foreground">
+      <th className="w-7 p-1.5" />
+      <th className="p-1.5 text-left text-xs font-medium">Name</th>
+      <th className="p-1.5 text-right text-xs font-medium">CY Avg</th>
+      <th className="w-20 p-1.5" />
+      <th className="p-1.5 text-right text-xs font-medium">&Delta;/Day</th>
+      <th className="p-1.5 text-right text-xs font-medium">YoY</th>
+      <th className="p-1.5 text-right text-xs font-medium">Share</th>
+    </tr>
+  );
+
+  const clrTotal = totalDelta >= 0 ? "#4ade80" : "#f87171";
 
   return (
     <div className="mt-4">
@@ -90,70 +148,64 @@ export function TrendDetailTable({
             "All periods \u00b7 Click a bar to focus"
           )}
         </p>
-        <p className="text-xs text-muted-foreground">Sorted by biggest movers</p>
+        <p className="text-sm">
+          <span className="text-muted-foreground">Total: </span>
+          <span className="tabular-nums" style={{ color: clrTotal }}>
+            {totalDelta >= 0 ? "+" : "-"}
+            {formatCurrency(Math.abs(totalDelta))}/day{" "}
+            {totalDeltaPct !== null && `(${formatPercent(totalDeltaPct, true)})`}
+          </span>
+        </p>
       </div>
-      <div className="overflow-x-auto rounded-md border border-border">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-border bg-muted/30 text-muted-foreground">
-              <th className="w-8 p-2" />
-              <th className="p-2 text-left font-medium">Name</th>
-              <th className="p-2 text-right font-medium">CY Avg/Day</th>
-              <th className="p-2 text-right font-medium">PY Avg/Day</th>
-              <th className="p-2 text-right font-medium">&Delta; $/Day</th>
-              <th className="p-2 text-right font-medium">YoY %</th>
-              <th className="p-2 text-right font-medium">Share</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((row) => (
-              <tr
-                key={row.name}
-                className="border-b border-border/40 transition-colors hover:bg-muted/40"
-                onMouseEnter={() => onGroupHover(row.name)}
-                onMouseLeave={() => onGroupHover(null)}
-              >
-                <td className="p-2 text-center">
-                  <span
-                    className="inline-block h-3 w-3 rounded-sm"
-                    style={{ backgroundColor: row.color }}
-                  />
-                </td>
-                <td className="p-2 font-medium text-card-foreground">{row.name}</td>
-                <td className="p-2 text-right tabular-nums">{formatCurrency(row.cy)}</td>
-                <td className="p-2 text-right tabular-nums text-muted-foreground">
-                  {formatCurrency(row.py)}
-                </td>
-                <td className="p-2 text-right tabular-nums" style={{ color: clr(row.delta) }}>
-                  {row.delta >= 0 ? "+" : "-"}
-                  {formatCurrency(Math.abs(row.delta))}
-                </td>
-                <td className="p-2 text-right tabular-nums" style={{ color: clr(row.delta) }}>
-                  {row.deltaPct !== null ? formatPercent(row.deltaPct, true) : "\u2014"}
-                </td>
-                <td className="p-2 text-right tabular-nums text-muted-foreground">
-                  {row.share.toFixed(1)}%
-                </td>
-              </tr>
-            ))}
-            <tr className="border-t border-border bg-muted/20 font-medium">
-              <td className="p-2" />
-              <td className="p-2 text-card-foreground">Total</td>
-              <td className="p-2 text-right tabular-nums">{formatCurrency(totalCy)}</td>
-              <td className="p-2 text-right tabular-nums text-muted-foreground">
-                {formatCurrency(totalPy)}
-              </td>
-              <td className="p-2 text-right tabular-nums" style={{ color: clr(totalDelta) }}>
-                {totalDelta >= 0 ? "+" : "-"}
-                {formatCurrency(Math.abs(totalDelta))}
-              </td>
-              <td className="p-2 text-right tabular-nums" style={{ color: clr(totalDelta) }}>
-                {totalDeltaPct !== null ? formatPercent(totalDeltaPct, true) : "\u2014"}
-              </td>
-              <td className="p-2 text-right tabular-nums text-muted-foreground">100%</td>
-            </tr>
-          </tbody>
-        </table>
+
+      <div className="grid grid-cols-2 gap-3">
+        {/* Gainers */}
+        <div className="rounded-md border border-border">
+          <div className="border-b border-border bg-emerald-950/30 px-3 py-1.5">
+            <span className="text-xs font-semibold uppercase tracking-wide text-emerald-400">
+              Gainers
+            </span>
+            <span className="ml-2 text-xs text-muted-foreground">({gainers.length})</span>
+          </div>
+          <table className="w-full text-sm">
+            <thead>{tableHeader}</thead>
+            <tbody>
+              {gainers.length > 0 ? (
+                gainers.map(renderRow)
+              ) : (
+                <tr>
+                  <td colSpan={7} className="p-3 text-center text-muted-foreground">
+                    No gainers
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Decliners */}
+        <div className="rounded-md border border-border">
+          <div className="border-b border-border bg-red-950/30 px-3 py-1.5">
+            <span className="text-xs font-semibold uppercase tracking-wide text-red-400">
+              Decliners
+            </span>
+            <span className="ml-2 text-xs text-muted-foreground">({decliners.length})</span>
+          </div>
+          <table className="w-full text-sm">
+            <thead>{tableHeader}</thead>
+            <tbody>
+              {decliners.length > 0 ? (
+                decliners.map(renderRow)
+              ) : (
+                <tr>
+                  <td colSpan={7} className="p-3 text-center text-muted-foreground">
+                    No decliners
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   );
