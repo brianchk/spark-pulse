@@ -188,7 +188,7 @@ export function TrendDetailTable({
   const deltaVal = (delta: number | null) => {
     if (delta === null) return <span className="text-muted-foreground">{"\u2014"}</span>;
     const isGain = delta >= 0;
-    const clr = isGain ? "#4ade80" : "#f87171";
+    const clr = isGain ? "var(--color-gain)" : "var(--color-loss)";
     return (
       <span className="tabular-nums" style={{ color: clr }}>
         {isGain ? "+" : "-"}{formatCurrency(Math.abs(delta))}
@@ -198,7 +198,7 @@ export function TrendDetailTable({
 
   const pctVal = (pct: number | null) => {
     if (pct === null) return <span className="text-muted-foreground">{"\u2014"}</span>;
-    const clr = pct >= 0 ? "#4ade80" : "#f87171";
+    const clr = pct >= 0 ? "var(--color-gain)" : "var(--color-loss)";
     return <span className="tabular-nums" style={{ color: clr }}>{formatPercent(pct, true)}</span>;
   };
 
@@ -256,7 +256,7 @@ export function TrendDetailTable({
   const renderRow = (row: TableRow) => {
     const barWidth = Math.min((Math.abs(row.primaryDelta) / maxAbsDelta) * 100, 100);
     const isGain = row.primaryDelta >= 0;
-    const barClr = isGain ? "#4ade80" : "#f87171";
+    const barClr = isGain ? "var(--color-gain)" : "var(--color-loss)";
 
     const pDelta = primaryIsYoY ? row.yoyDelta : row.popDelta;
     const pPct = primaryIsYoY ? row.yoyPct : row.popPct;
@@ -317,7 +317,7 @@ export function TrendDetailTable({
 
     return (
       <Fragment key={`summary-${label}`}>
-        <tr className="border-b border-border bg-muted/20 font-medium">
+        <tr className="border-b border-border bg-muted/50 dark:bg-muted/30 font-medium">
           <td className="p-1.5" />
           <td className="p-1.5 text-card-foreground">{label}</td>
           <td className="p-1.5 text-right tabular-nums">{formatCurrency(sub.cy)}</td>
@@ -329,7 +329,7 @@ export function TrendDetailTable({
           <td className="p-1.5 text-right tabular-nums text-muted-foreground">{sub.share.toFixed(0)}%</td>
         </tr>
         {/* Summary context row — narrow only */}
-        <tr className="border-b border-border bg-muted/20 font-medium lg:hidden">
+        <tr className="border-b border-border bg-muted/50 dark:bg-muted/30 font-medium lg:hidden">
           <td colSpan={2} className="pb-1.5 px-1.5" />
           <td className="pb-1.5 px-1.5" />
           <td className="pb-1.5 px-1.5 text-right text-xs text-muted-foreground">{pctVal(pPct)}</td>
@@ -349,8 +349,8 @@ export function TrendDetailTable({
     expanded: boolean,
     setExpanded: (v: boolean) => void,
   ) => {
-    const bgClass = isGainPanel ? "bg-emerald-950/30" : "bg-red-950/30";
-    const labelClass = isGainPanel ? "text-emerald-400" : "text-red-400";
+    const bgClass = isGainPanel ? "bg-emerald-50 dark:bg-emerald-950/30" : "bg-red-50 dark:bg-red-950/30";
+    const labelClass = isGainPanel ? "text-emerald-700 dark:text-emerald-400" : "text-red-700 dark:text-red-400";
     const visibleRows = expanded || rows.length <= cutCount ? rows : rows.slice(0, cutCount);
     const hiddenCount = rows.length - visibleRows.length;
 
@@ -398,7 +398,7 @@ export function TrendDetailTable({
   };
 
   const totalPrimaryDelta = primaryIsYoY ? totalYoyDelta : totalPopDelta;
-  const clrTotal = (totalPrimaryDelta ?? 0) >= 0 ? "#4ade80" : "#f87171";
+  const clrTotal = (totalPrimaryDelta ?? 0) >= 0 ? "var(--color-gain)" : "var(--color-loss)";
 
   return (
     <div className="mt-4">

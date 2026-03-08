@@ -196,6 +196,18 @@ export function SalesTrendChart({ initialData }: { initialData?: TrendResponse |
     stack: "cy",
     data: makeData(data.cy[g] || data.labels.map(() => 0), g, false),
     itemStyle: { color: getColor(g).solid },
+    label: {
+      show: true,
+      position: "inside" as const,
+      fontSize: 9,
+      color: "#fff",
+      textShadowColor: "rgba(0,0,0,0.4)",
+      textShadowBlur: 2,
+      formatter: (params: { value: number | { value: number } }) => {
+        const v = typeof params.value === "number" ? params.value : params.value?.value ?? 0;
+        return v >= 1000 ? Math.round(v / 1000).toString() : "";
+      },
+    },
     cursor: "pointer" as const,
     animationDuration: 600,
     animationEasing: "cubicInOut" as const,
@@ -226,7 +238,7 @@ export function SalesTrendChart({ initialData }: { initialData?: TrendResponse |
         const pyTotal = pyItems.reduce((s, i) => s + i.value, 0);
         const yoyPct = pyTotal > 0 ? ((cyTotal - pyTotal) / pyTotal) * 100 : 0;
         const yoySign = yoyPct >= 0 ? "+" : "";
-        const yoyColor = yoyPct >= 0 ? "#4ade80" : "#f87171";
+        const yoyColor = yoyPct >= 0 ? "var(--color-gain)" : "var(--color-loss)";
 
         let html = `<strong>${label}</strong> <span style="color:#999">(avg/day)</span><br/>`;
         html += `<strong>CY: ${formatCurrency(cyTotal)}</strong>`;
