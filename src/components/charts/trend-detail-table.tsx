@@ -243,10 +243,10 @@ export function TrendDetailTable({
       <th className={thDesktopOnly} onClick={() => handleSort(primaryPctKey)}>
         {primaryLabel} %{sortIndicator(primaryPctKey)}
       </th>
-      <th className={`${thSort} opacity-50`} onClick={() => handleSort(secondaryDeltaKey)}>
+      <th className={`${thSort} opacity-70`} onClick={() => handleSort(secondaryDeltaKey)}>
         {secondaryLabel} ${sortIndicator(secondaryDeltaKey)}
       </th>
-      <th className={`${thDesktopOnly} opacity-50`} onClick={() => handleSort(secondaryPctKey)}>
+      <th className={`${thDesktopOnly} opacity-70`} onClick={() => handleSort(secondaryPctKey)}>
         {secondaryLabel} %{sortIndicator(secondaryPctKey)}
       </th>
       <th className={thSort} onClick={() => handleSort("share")}>Share{sortIndicator("share")}</th>
@@ -284,8 +284,8 @@ export function TrendDetailTable({
           </td>
           <td className="p-1.5 text-right">{deltaVal(pDelta)}</td>
           <td className="p-1.5 text-right hidden lg:table-cell">{pctVal(pPct)}</td>
-          <td className="p-1.5 text-right opacity-50">{deltaVal(sDelta)}</td>
-          <td className="p-1.5 text-right hidden lg:table-cell opacity-50">{pctVal(sPct)}</td>
+          <td className="p-1.5 text-right opacity-70">{deltaVal(sDelta)}</td>
+          <td className="p-1.5 text-right hidden lg:table-cell opacity-70">{pctVal(sPct)}</td>
           <td className="p-1.5 text-right tabular-nums text-muted-foreground">{row.share.toFixed(0)}%</td>
         </tr>
         {/* Row 2: narrow only — context (bar, primary %, secondary %) */}
@@ -302,7 +302,7 @@ export function TrendDetailTable({
             />
           </td>
           <td className="pb-1.5 px-1.5 text-right text-xs text-muted-foreground">{pctVal(pPct)}</td>
-          <td className="pb-1.5 px-1.5 text-right text-xs text-muted-foreground opacity-50">{pctVal(sPct)}</td>
+          <td className="pb-1.5 px-1.5 text-right text-xs text-muted-foreground opacity-70">{pctVal(sPct)}</td>
           <td className="pb-1.5 px-1.5" />
         </tr>
       </Fragment>
@@ -324,8 +324,8 @@ export function TrendDetailTable({
           <td className="w-14 p-1.5 hidden lg:table-cell" />
           <td className="p-1.5 text-right">{deltaVal(pDelta)}</td>
           <td className="p-1.5 text-right hidden lg:table-cell">{pctVal(pPct)}</td>
-          <td className="p-1.5 text-right opacity-50">{deltaVal(sDelta)}</td>
-          <td className="p-1.5 text-right hidden lg:table-cell opacity-50">{pctVal(sPct)}</td>
+          <td className="p-1.5 text-right opacity-70">{deltaVal(sDelta)}</td>
+          <td className="p-1.5 text-right hidden lg:table-cell opacity-70">{pctVal(sPct)}</td>
           <td className="p-1.5 text-right tabular-nums text-muted-foreground">{sub.share.toFixed(0)}%</td>
         </tr>
         {/* Summary context row — narrow only */}
@@ -333,7 +333,7 @@ export function TrendDetailTable({
           <td colSpan={2} className="pb-1.5 px-1.5" />
           <td className="pb-1.5 px-1.5" />
           <td className="pb-1.5 px-1.5 text-right text-xs text-muted-foreground">{pctVal(pPct)}</td>
-          <td className="pb-1.5 px-1.5 text-right text-xs text-muted-foreground opacity-50">{pctVal(sPct)}</td>
+          <td className="pb-1.5 px-1.5 text-right text-xs text-muted-foreground opacity-70">{pctVal(sPct)}</td>
           <td className="pb-1.5 px-1.5" />
         </tr>
       </Fragment>
