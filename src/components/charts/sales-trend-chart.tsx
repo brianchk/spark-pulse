@@ -4,14 +4,14 @@ import { useState, useCallback } from "react";
 import ReactEChartsCore from "echarts-for-react/lib/core";
 import * as echarts from "echarts/core";
 import { BarChart } from "echarts/charts";
-import { GridComponent, TooltipComponent, LegendComponent } from "echarts/components";
+import { GridComponent, TooltipComponent, LegendComponent, DataZoomComponent } from "echarts/components";
 import { CanvasRenderer } from "echarts/renderers";
 import { usePulseQuery } from "@/lib/hooks/use-pulse-query";
 import { formatCurrency } from "@/lib/utils/formatters";
 import { getStoreColor, getMaincatColor, RETAIL_STORE_ORDER } from "@/lib/constants/store-colors";
 import { TrendDetailTable } from "./trend-detail-table";
 
-echarts.use([BarChart, GridComponent, TooltipComponent, LegendComponent, CanvasRenderer]);
+echarts.use([BarChart, GridComponent, TooltipComponent, LegendComponent, DataZoomComponent, CanvasRenderer]);
 
 interface TrendResponse {
   labels: string[];
@@ -201,8 +201,18 @@ export function SalesTrendChart({ initialData }: { initialData?: TrendResponse |
     animationEasing: "cubicInOut" as const,
   }));
 
+  // Auto-zoom: show most recent bars when there are too many for the width.
+  // Each period has 2 stacked bars (CY+PY) side by side, so ~40px per period is comfortable.
+  // On narrow screens this naturally shows fewer periods; on wide screens, all fit.
+  const MIN_PX_PER_PERIOD = 40;
+  const chartUsableWidth = typeof window !== "undefined" ? Math.min(window.innerWidth - 120, 1200) : 900;
+  const maxVisiblePeriods = Math.floor(chartUsableWidth / MIN_PX_PER_PERIOD);
+  const totalPeriods = displayLabels.length;
+  const needsZoom = totalPeriods > maxVisiblePeriods;
+  const zoomStart = needsZoom ? ((totalPeriods - maxVisiblePeriods) / totalPeriods) * 100 : 0;
+
   const option: echarts.EChartsCoreOption = {
-    grid: { left: 80, right: 20, top: 60, bottom: 40 },
+    grid: { left: 80, right: 20, top: 60, bottom: needsZoom ? 70 : 40 },
     tooltip: {
       trigger: "axis",
       formatter: (params: unknown) => {
@@ -256,6 +266,23 @@ export function SalesTrendChart({ initialData }: { initialData?: TrendResponse |
       nameTextStyle: { fontSize: 11, padding: [0, 0, 0, 40] },
       axisLabel: { formatter: (v: number) => formatCurrency(v, true) },
     },
+    dataZoom: needsZoom
+      ? [
+          {
+            type: "slider",
+            start: zoomStart,
+            end: 100,
+            bottom: 8,
+            height: 20,
+            borderColor: "transparent",
+            backgroundColor: "rgba(255,255,255,0.05)",
+            fillerColor: "rgba(255,255,255,0.08)",
+            handleSize: "60%",
+            textStyle: { fontSize: 10, color: "#888" },
+          },
+          { type: "inside", start: zoomStart, end: 100 },
+        ]
+      : undefined,
     series: [...pySeries, ...cySeries],
   };
 
