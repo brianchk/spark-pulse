@@ -7,6 +7,7 @@ import { GridComponent, TooltipComponent, LegendComponent } from "echarts/compon
 import { CanvasRenderer } from "echarts/renderers";
 import { usePulseQuery } from "@/lib/hooks/use-pulse-query";
 import { formatCurrency } from "@/lib/utils/formatters";
+import { getStoreColor, RETAIL_STORE_ORDER } from "@/lib/constants/store-colors";
 
 echarts.use([BarChart, GridComponent, TooltipComponent, LegendComponent, CanvasRenderer]);
 
@@ -23,19 +24,6 @@ interface DailySalesResponse {
   period: string;
   stores: string[];
 }
-
-// Temporary store colors — will be replaced with Brian's official palette
-const STORE_COLORS: Record<string, string> = {
-  QRE: "hsl(220, 70%, 50%)",
-  K11: "hsl(160, 60%, 45%)",
-  QRC: "hsl(280, 55%, 55%)",
-  HC: "hsl(30, 80%, 55%)",
-  PP: "hsl(350, 65%, 55%)",
-  MG: "hsl(190, 60%, 45%)",
-  LG2: "hsl(100, 50%, 45%)",
-  RB: "hsl(45, 75%, 50%)",
-  GLOW: "hsl(330, 60%, 55%)",
-};
 
 export function DailyRevenueByStoreChart({ days = 30 }: { days?: number }) {
   const { data, isLoading, error } = usePulseQuery<DailySalesResponse>(
@@ -59,9 +47,9 @@ export function DailyRevenueByStoreChart({ days = 30 }: { days?: number }) {
     );
   }
 
-  // Pivot: group by date, each store is a series
   const dateSet = [...new Set(data.data.map((d) => d.date))].sort();
-  const stores = data.stores;
+  // Use official store order, filtered to stores present in data
+  const stores = RETAIL_STORE_ORDER.filter((s) => data.stores.includes(s));
 
   const dateLabels = dateSet.map((d) => {
     const dt = new Date(d + "T00:00:00");
@@ -81,9 +69,7 @@ export function DailyRevenueByStoreChart({ days = 30 }: { days?: number }) {
     type: "bar" as const,
     stack: "revenue",
     data: dateSet.map((d) => lookup.get(d)?.get(store) || 0),
-    itemStyle: {
-      color: STORE_COLORS[store] || "hsl(0, 0%, 60%)",
-    },
+    itemStyle: { color: getStoreColor(store).solid },
     animationDuration: 600,
     animationEasing: "cubicInOut" as const,
   }));

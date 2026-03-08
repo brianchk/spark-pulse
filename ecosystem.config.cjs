@@ -8,6 +8,7 @@ module.exports = {
       interpreter: "none",
       env: {
         PYTHONDONTWRITEBYTECODE: "1",
+        PYTHONUNBUFFERED: "1",
       },
     },
     {

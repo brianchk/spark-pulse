@@ -6,13 +6,15 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from api.core.config import settings
-from api.core.db import close_mongo
+from api.core.db import close_mongo, init_mongo
 from api.routers import sales
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     print(f"Spark Pulse API starting (env={settings.env})")
+    init_mongo()
+    print("MongoDB connected")
     yield
     close_mongo()
     print("Spark Pulse API shutting down")
