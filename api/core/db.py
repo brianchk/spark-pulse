@@ -1,5 +1,7 @@
 """Database connection management for MongoDB and SparkDB."""
 
+import pymysql
+import pymysql.cursors
 from pymongo import MongoClient
 from pymongo.database import Database
 
@@ -30,3 +32,23 @@ def close_mongo():
     if _mongo_client is not None:
         _mongo_client.close()
         _mongo_client = None
+
+
+def sparkdb_query(sql: str, params: tuple | None = None, timeout: int = 90) -> list[dict]:
+    """Run a read-only SQL query against SparkDB. Returns list of dicts."""
+    conn = pymysql.connect(
+        host=settings.sparkdb_host,
+        port=settings.sparkdb_port,
+        database=settings.sparkdb_name,
+        user=settings.sparkdb_user,
+        password=settings.sparkdb_password,
+        cursorclass=pymysql.cursors.DictCursor,
+        connect_timeout=10,
+        read_timeout=timeout,
+    )
+    try:
+        cursor = conn.cursor()
+        cursor.execute(sql, params)
+        return cursor.fetchall()
+    finally:
+        conn.close()

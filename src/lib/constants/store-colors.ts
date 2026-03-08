@@ -32,3 +32,27 @@ export const RETAIL_STORE_ORDER = ["QRC", "QRE", "PP", "K11", "LG2", "RB", "HC",
 export function getStoreColor(name: string): StoreColor {
   return STORE_COLORS[name] ?? { solid: "#888888", priorYear: "rgba(136,136,136,0.3)" };
 }
+
+/** MainCat (product category) color palette — distinct from store colors. */
+export const MAINCAT_COLORS: Record<string, StoreColor> = {
+  TOYS: { solid: "#E6550D", priorYear: "rgba(230,85,13,0.3)" },
+  APPAREL: { solid: "#3182BD", priorYear: "rgba(49,130,189,0.3)" },
+  KITCHENWARE: { solid: "#31A354", priorYear: "rgba(49,163,84,0.3)" },
+  "BABY OTHERS": { solid: "#756BB1", priorYear: "rgba(117,107,177,0.3)" },
+  FURNITURE: { solid: "#843C39", priorYear: "rgba(132,60,57,0.3)" },
+  "BEDDING & LINEN": { solid: "#E7969C", priorYear: "rgba(231,150,156,0.3)" },
+  "HOME DECOR": { solid: "#D6616B", priorYear: "rgba(214,97,107,0.3)" },
+  "PERSONAL CARE & BEAUTY": { solid: "#7B4173", priorYear: "rgba(123,65,115,0.3)" },
+  "BOOKS - STATIONERY - ARTS & CRAFT": { solid: "#CE6DBD", priorYear: "rgba(206,109,189,0.3)" },
+  "SPECIAL CODE": { solid: "#636363", priorYear: "rgba(99,99,99,0.3)" },
+  "OUTDOOR - SPORTS - TRAVEL": { solid: "#17BECF", priorYear: "rgba(23,190,207,0.3)" },
+  "FOOD & BEVERAGE": { solid: "#BCBD22", priorYear: "rgba(188,189,34,0.3)" },
+  PARTY: { solid: "#E377C2", priorYear: "rgba(227,119,194,0.3)" },
+  JEWELLERY: { solid: "#8C6D31", priorYear: "rgba(140,109,49,0.3)" },
+  Other: { solid: "#969696", priorYear: "rgba(150,150,150,0.3)" },
+};
+
+/** Get category color, falling back to gray if unknown. */
+export function getMaincatColor(name: string): StoreColor {
+  return MAINCAT_COLORS[name] ?? { solid: "#888888", priorYear: "rgba(136,136,136,0.3)" };
+}

@@ -1,9 +1,9 @@
-"""Sales data queries against MongoDB."""
+"""Sales data queries against MongoDB and SparkDB."""
 
 from collections import defaultdict
 from datetime import date, timedelta
 
-from api.core.db import get_mongo_db
+from api.core.db import get_mongo_db, sparkdb_query
 
 # Store ID → display name mapping
 STORE_MAP: dict[str, str] = {
@@ -26,6 +26,12 @@ RETAIL_STORE_IDS = ["1", "25", "26", "40", "41", "54", "68", "77", "81"]
 
 # Same-store: exclude new locations (MG opened May 2025, PP opened Oct 2025)
 SAME_STORE_EXCLUDE = {"77", "81"}  # MG, PP
+
+# Retail store IDs as ints (for SparkDB queries — histheader.SN is int)
+RETAIL_STORE_SNS = [1, 25, 26, 40, 41, 54, 68, 77, 81]
+
+# Categories to group as "Other" (accounting codes, internal)
+_MAINCAT_OTHER = {"Cash Coupon", "優惠券類", "SUPPLIES", "Others"}
 
 
 def _iso_week_label(d: date) -> str:
@@ -77,9 +83,11 @@ def _fetch_daily_by_store(
 def _bucket_to_periods(
     rows: list[dict],
     granularity: str,
+    group_key: str = "store_name",
 ) -> dict[str, dict[str, dict]]:
-    """Bucket daily rows into period → store → {nr, tc, days}.
+    """Bucket daily rows into period → group → {nr, tc, days}.
 
+    group_key: which field in each row to group by (e.g. "store_name" or "maincat").
     For daily granularity, period key is the ISO date.
     For weekly, period key is 'W10' etc.
     For monthly, period key is 'Mar 26' etc.
@@ -95,7 +103,7 @@ def _bucket_to_periods(
         else:  # monthly
             period = _month_label(d)
 
-        b = buckets[period][row["store_name"]]
+        b = buckets[period][row[group_key]]
         b["nr"] += row["nr"]
         b["tc"] += row["tc"]
         b["days"].add(row["date"])
@@ -227,6 +235,115 @@ def query_trend_yoy(
         "period_cy": f"{cy_start.isoformat()} to {cy_end.isoformat()}",
         "period_py": f"{py_start.isoformat()} to {py_end.isoformat()}",
         "stores": all_stores,
+        "granularity": granularity,
+        "same_store": same_store,
+        "daily_average": True,
+    }
+
+
+# ---------------------------------------------------------------------------
+# MainCat breakdown — SparkDB base tables (histheader + histdetail)
+# ---------------------------------------------------------------------------
+
+
+def _resolve_store_sns(same_store: bool) -> list[int]:
+    """Resolve retail store SNs (int) for SparkDB queries."""
+    sns = list(RETAIL_STORE_SNS)
+    if same_store:
+        exclude_sns = {int(sid) for sid in SAME_STORE_EXCLUDE}
+        sns = [sn for sn in sns if sn not in exclude_sns]
+    return sns
+
+
+def _fetch_daily_by_maincat(
+    start: date,
+    end: date,
+    store_sns: list[int],
+) -> list[dict]:
+    """Fetch daily NR from SparkDB base tables, grouped by date + MainCat."""
+    sns_csv = ",".join(str(s) for s in store_sns)
+    rows = sparkdb_query(
+        f"""
+        SELECT
+            cm.D1L as maincat,
+            DATE(hh.BSD) as bdate,
+            SUM(CAST(((hd.VDA + hd.FCA3 + hd.FCA4 + hd.FCA5) * hd.SD * -1)
+                     * IF(hd.DK < -10, 0, 1) - IFNULL(hd.RS7, 0) AS DECIMAL(24,4))) AS nr
+        FROM histheader hh
+        JOIN histdetail hd ON hd.RL = hh.RL
+        JOIN productonsale p ON hd.BC = p.BC
+        JOIN cat_main cm ON p.C1 = cm.KY
+        WHERE hh.CF = false AND hh.XT IN (1,14)
+          AND hd.XT IN (1,14) AND hd.CA = false AND hd.OFG = false AND hd.DK >= 0
+          AND hh.SN IN ({sns_csv})
+          AND hh.BSD >= %s AND hh.BSD <= %s
+        GROUP BY cm.D1L, DATE(hh.BSD)
+        """,
+        (start.isoformat(), end.isoformat()),
+        timeout=120,
+    )
+    result = []
+    for r in rows:
+        cat = r["maincat"]
+        if cat in _MAINCAT_OTHER:
+            cat = "Other"
+        result.append(
+            {
+                "date": r["bdate"].isoformat() if hasattr(r["bdate"], "isoformat") else str(r["bdate"]),
+                "maincat": cat,
+                "nr": float(r["nr"]),
+                "tc": 0,
+            }
+        )
+    return result
+
+
+def query_trend_by_maincat(
+    granularity: str = "weekly",
+    periods: int = 20,
+    same_store: bool = False,
+) -> dict:
+    """Trend query broken down by MainCat (product category) with YoY, daily averages.
+
+    Returns same shape as query_trend_yoy but with categories instead of stores.
+    """
+    store_sns = _resolve_store_sns(same_store)
+    cy_start, cy_end, py_start, py_end = _compute_date_ranges(granularity, periods)
+
+    cy_rows = _fetch_daily_by_maincat(cy_start, cy_end, store_sns)
+    py_rows = _fetch_daily_by_maincat(py_start, py_end, store_sns)
+
+    cy_buckets = _bucket_to_periods(cy_rows, granularity, group_key="maincat")
+    py_buckets = _bucket_to_periods(py_rows, granularity, group_key="maincat")
+
+    labels = _generate_period_labels(cy_start, cy_end, granularity)
+
+    all_cats = sorted({s for b in [cy_buckets, py_buckets] for period_data in b.values() for s in period_data})
+
+    def _avg_series(buckets: dict, labels: list[str]) -> dict[str, list[float]]:
+        result = {}
+        for cat in all_cats:
+            vals = []
+            for label in labels:
+                entry = buckets.get(label, {}).get(cat)
+                if entry and entry["days"]:
+                    day_count = len(entry["days"])
+                    vals.append(round(entry["nr"] / day_count, 2))
+                else:
+                    vals.append(0)
+            result[cat] = vals
+        return result
+
+    cy_data = _avg_series(cy_buckets, labels)
+    py_data = _avg_series(py_buckets, labels)
+
+    return {
+        "labels": labels,
+        "cy": cy_data,
+        "py": py_data,
+        "period_cy": f"{cy_start.isoformat()} to {cy_end.isoformat()}",
+        "period_py": f"{py_start.isoformat()} to {py_end.isoformat()}",
+        "categories": all_cats,
         "granularity": granularity,
         "same_store": same_store,
         "daily_average": True,

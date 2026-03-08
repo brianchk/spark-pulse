@@ -6,7 +6,7 @@ from functools import partial
 from fastapi import APIRouter, Query
 
 from api.core.cache import cache_get, cache_set
-from api.queries.sales import query_trend_yoy
+from api.queries.sales import query_trend_by_maincat, query_trend_yoy
 
 router = APIRouter(prefix="/api/sales", tags=["sales"])
 
@@ -28,6 +28,25 @@ async def get_sales_trend(
 
     loop = asyncio.get_event_loop()
     result = await loop.run_in_executor(None, partial(query_trend_yoy, granularity, periods, same_store, store_ids))
+
+    cache_set(cache_key, result)
+    return result
+
+
+@router.get("/trend/maincat")
+async def get_sales_trend_maincat(
+    granularity: str = Query("weekly", description="daily, weekly, or monthly"),
+    periods: int = Query(20, ge=4, le=365, description="Number of periods"),
+    same_store: bool = Query(False, description="Exclude new stores (PP, MG)"),
+):
+    """Sales trend by MainCat (product category) with YoY comparison."""
+    cache_key = f"trend_maincat:{granularity}:{periods}:{same_store}"
+    cached = cache_get(cache_key)
+    if cached is not None:
+        return cached
+
+    loop = asyncio.get_event_loop()
+    result = await loop.run_in_executor(None, partial(query_trend_by_maincat, granularity, periods, same_store))
 
     cache_set(cache_key, result)
     return result
