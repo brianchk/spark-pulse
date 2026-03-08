@@ -80,6 +80,14 @@ export function TrendDetailTable({
   const totalDeltaPct = totalPy > 0 ? (totalDelta / totalPy) * 100 : null;
   const maxAbsDelta = Math.max(...[...gainers, ...decliners].map((r) => Math.abs(r.delta)), 1);
 
+  // Subtotals per panel
+  const gainersCy = gainers.reduce((s, r) => s + r.cy, 0);
+  const gainersDelta = gainers.reduce((s, r) => s + r.delta, 0);
+  const gainersShare = gainers.reduce((s, r) => s + r.share, 0);
+  const declinersCy = decliners.reduce((s, r) => s + r.cy, 0);
+  const declinersDelta = decliners.reduce((s, r) => s + r.delta, 0);
+  const declinersShare = decliners.reduce((s, r) => s + r.share, 0);
+
   const renderRow = (row: TableRow) => {
     const barWidth = Math.min((Math.abs(row.delta) / maxAbsDelta) * 100, 100);
     const isGain = row.delta >= 0;
@@ -133,6 +141,24 @@ export function TrendDetailTable({
     </tr>
   );
 
+  const renderSummaryRow = (label: string, cy: number, delta: number, share: number, isGain: boolean) => {
+    const clr = isGain ? "#4ade80" : "#f87171";
+    return (
+      <tr className="border-b border-border bg-muted/20 font-medium">
+        <td className="p-1.5" />
+        <td className="p-1.5 text-card-foreground">{label}</td>
+        <td className="p-1.5 text-right tabular-nums">{formatCurrency(cy)}</td>
+        <td className="w-20 p-1.5" />
+        <td className="p-1.5 text-right tabular-nums" style={{ color: clr }}>
+          {isGain ? "+" : "-"}
+          {formatCurrency(Math.abs(delta))}
+        </td>
+        <td className="p-1.5" />
+        <td className="p-1.5 text-right tabular-nums text-muted-foreground">{share.toFixed(0)}%</td>
+      </tr>
+    );
+  };
+
   const clrTotal = totalDelta >= 0 ? "#4ade80" : "#f87171";
 
   return (
@@ -171,7 +197,10 @@ export function TrendDetailTable({
             <thead>{tableHeader}</thead>
             <tbody>
               {gainers.length > 0 ? (
-                gainers.map(renderRow)
+                <>
+                  {renderSummaryRow("Subtotal", gainersCy, gainersDelta, gainersShare, true)}
+                  {gainers.map(renderRow)}
+                </>
               ) : (
                 <tr>
                   <td colSpan={7} className="p-3 text-center text-muted-foreground">
@@ -195,7 +224,10 @@ export function TrendDetailTable({
             <thead>{tableHeader}</thead>
             <tbody>
               {decliners.length > 0 ? (
-                decliners.map(renderRow)
+                <>
+                  {renderSummaryRow("Subtotal", declinersCy, declinersDelta, declinersShare, false)}
+                  {decliners.map(renderRow)}
+                </>
               ) : (
                 <tr>
                   <td colSpan={7} className="p-3 text-center text-muted-foreground">
