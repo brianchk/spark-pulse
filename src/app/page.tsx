@@ -1,4 +1,5 @@
 import { SalesTrendChart } from "@/components/charts/sales-trend-chart";
+import { ThemeToggle } from "@/components/ui/theme-toggle";
 
 const API_INTERNAL = `http://localhost:${process.env.API_PORT || 8100}`;
 
@@ -20,9 +21,12 @@ export default async function Home() {
 
   return (
     <div className="min-h-screen bg-background">
-      <header className="border-b border-border px-6 py-4">
-        <h1 className="text-xl font-semibold text-foreground">Spark Pulse</h1>
-        <p className="text-sm text-muted-foreground">PB Group — Retail Dashboard</p>
+      <header className="flex items-center justify-between border-b border-border px-6 py-4">
+        <div>
+          <h1 className="text-xl font-semibold text-foreground">Spark Pulse</h1>
+          <p className="text-sm text-muted-foreground">PB Group — Retail Dashboard</p>
+        </div>
+        <ThemeToggle />
       </header>
       <main className="mx-auto max-w-7xl space-y-6 p-6">
         <SalesTrendChart initialData={initialData} />
