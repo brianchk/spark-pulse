@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from api.core.config import settings
 from api.core.db import close_mongo, init_mongo
-from api.routers import sales
+from api.routers import query, sales
 
 
 @asynccontextmanager
@@ -53,6 +53,7 @@ async def timing_middleware(request: Request, call_next):
 
 
 app.include_router(sales.router)
+app.include_router(query.router)
 
 
 @app.get("/api/health")

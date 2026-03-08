@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 import ReactEChartsCore from "echarts-for-react/lib/core";
 import * as echarts from "echarts/core";
 import { BarChart } from "echarts/charts";
@@ -35,6 +35,8 @@ const GRANULARITY_OPTIONS: { value: Granularity; label: string; defaultPeriods: 
   { value: "monthly", label: "Monthly", defaultPeriods: 12 },
 ];
 
+const POP_LABELS: Record<string, string> = { daily: "DoD", weekly: "WoW", monthly: "MoM" };
+
 function formatDateLabel(label: string, granularity: string): string {
   if (granularity === "daily") {
     const dt = new Date(label + "T00:00:00");
@@ -49,6 +51,9 @@ export function SalesTrendChart({ initialData }: { initialData?: TrendResponse |
   const [breakdown, setBreakdown] = useState<Breakdown>("store");
   const [focusedPeriod, setFocusedPeriod] = useState<number | null>(null);
   const [hoveredGroup, setHoveredGroup] = useState<string | null>(null);
+  const [hiddenGroups, setHiddenGroups] = useState<Set<string>>(new Set());
+  const syncingLegend = useRef(false);
+  const hoveredSeriesRef = useRef<string | null>(null);
 
   const periods = GRANULARITY_OPTIONS.find((o) => o.value === granularity)!.defaultPeriods;
   const isDefaultState = granularity === "weekly" && !sameStore && breakdown === "store";
@@ -76,6 +81,42 @@ export function SalesTrendChart({ initialData }: { initialData?: TrendResponse |
     setHoveredGroup(group);
   }, []);
 
+  // Sync PY series visibility + table when legend is toggled
+  const handleLegendChange = useCallback(
+    (params: { selected: Record<string, boolean> }, chart: { dispatchAction: (a: { type: string; name: string }) => void }) => {
+      if (syncingLegend.current) return;
+      syncingLegend.current = true;
+
+      // Toggle corresponding PY series to match CY
+      for (const [name, isSelected] of Object.entries(params.selected)) {
+        if (!name.endsWith(" PY")) {
+          chart.dispatchAction({
+            type: isSelected ? "legendSelect" : "legendUnSelect",
+            name: `${name} PY`,
+          });
+        }
+      }
+
+      // Update hidden set for table filtering
+      const hidden = new Set<string>();
+      for (const [name, isSelected] of Object.entries(params.selected)) {
+        if (!isSelected && !name.endsWith(" PY")) hidden.add(name);
+      }
+      setHiddenGroups(hidden);
+
+      syncingLegend.current = false;
+    },
+    []
+  );
+
+  // Track which bar segment the mouse is over (ref avoids re-renders)
+  const handleSeriesOver = useCallback((params: { seriesName: string }) => {
+    hoveredSeriesRef.current = params.seriesName;
+  }, []);
+  const handleSeriesOut = useCallback(() => {
+    hoveredSeriesRef.current = null;
+  }, []);
+
   // Controls bar
   const controls = (
     <div className="mb-4 flex flex-wrap items-center gap-4">
@@ -86,6 +127,7 @@ export function SalesTrendChart({ initialData }: { initialData?: TrendResponse |
             onClick={() => {
               setGranularity(opt.value);
               setFocusedPeriod(null);
+              setHiddenGroups(new Set());
             }}
             className={`px-3 py-1.5 text-sm font-medium transition-colors first:rounded-l-md last:rounded-r-md ${
               granularity === opt.value
@@ -105,6 +147,7 @@ export function SalesTrendChart({ initialData }: { initialData?: TrendResponse |
             onClick={() => {
               setBreakdown(opt);
               setFocusedPeriod(null);
+              setHiddenGroups(new Set());
             }}
             className={`px-3 py-1.5 text-sm font-medium transition-colors first:rounded-l-md last:rounded-r-md ${
               breakdown === opt
@@ -228,30 +271,61 @@ export function SalesTrendChart({ initialData }: { initialData?: TrendResponse |
     tooltip: {
       trigger: "axis",
       formatter: (params: unknown) => {
-        const items = params as { seriesName: string; value: number; color: string }[];
-        const label = (params as { name: string }[])[0]?.name;
+        const items = params as { seriesName: string; value: number; color: string; dataIndex: number; name: string }[];
+        const label = items[0]?.name;
+        const idx = items[0]?.dataIndex;
 
+        const hovered = hoveredSeriesRef.current;
+        const segmentName = hovered
+          ? hovered.endsWith(" PY") ? hovered.slice(0, -3) : hovered
+          : null;
+
+        // --- Compact tooltip: hovering a specific bar segment ---
+        if (segmentName) {
+          const cyVal = data.cy[segmentName]?.[idx] || 0;
+          const pyVal = data.py[segmentName]?.[idx] || 0;
+          const yoyPct = pyVal > 0 ? ((cyVal - pyVal) / pyVal) * 100 : 0;
+          const totalCy = groups.reduce((s, g) => s + (data.cy[g]?.[idx] || 0), 0);
+          const share = totalCy > 0 ? (cyVal / totalCy) * 100 : 0;
+          const prevCy = idx > 0 ? (data.cy[segmentName]?.[idx - 1] || 0) : 0;
+          const popPct = prevCy > 0 ? ((cyVal - prevCy) / prevCy) * 100 : 0;
+          const popLabel = POP_LABELS[granularity] || "PoP";
+          const segColor = getColor(segmentName).solid;
+
+          const fmtPct = (v: number) => `${v >= 0 ? "+" : ""}${v.toFixed(1)}%`;
+          const pctColor = (v: number) => v >= 0 ? "var(--color-gain)" : "var(--color-loss)";
+
+          let html = `<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${segColor};margin-right:6px"></span>`;
+          html += `<strong>${segmentName}</strong> · ${label}<br/>`;
+          html += `${formatCurrency(cyVal)}`;
+          if (pyVal > 0) html += ` <span style="color:${pctColor(yoyPct)}">(${fmtPct(yoyPct)} YoY)</span>`;
+          html += `<br/>`;
+          const parts: string[] = [];
+          if (idx > 0 && prevCy > 0) parts.push(`<span style="color:${pctColor(popPct)}">${fmtPct(popPct)} ${popLabel}</span>`);
+          parts.push(`${share.toFixed(0)}% share`);
+          html += parts.join(" · ");
+          return html;
+        }
+
+        // --- Full tooltip: hovering x-axis area or between bars ---
         const cyItems = items.filter((i) => !i.seriesName.endsWith(" PY") && i.value > 0);
         const pyItems = items.filter((i) => i.seriesName.endsWith(" PY") && i.value > 0);
-
         const cyTotal = cyItems.reduce((s, i) => s + i.value, 0);
         const pyTotal = pyItems.reduce((s, i) => s + i.value, 0);
         const yoyPct = pyTotal > 0 ? ((cyTotal - pyTotal) / pyTotal) * 100 : 0;
-        const yoySign = yoyPct >= 0 ? "+" : "";
         const yoyColor = yoyPct >= 0 ? "var(--color-gain)" : "var(--color-loss)";
 
         let html = `<strong>${label}</strong> <span style="color:#999">(avg/day)</span><br/>`;
         html += `<strong>CY: ${formatCurrency(cyTotal)}</strong>`;
         if (pyTotal > 0) {
-          html += ` <span style="color:${yoyColor}">(${yoySign}${yoyPct.toFixed(1)}%)</span>`;
+          html += ` <span style="color:${yoyColor}">(${yoyPct >= 0 ? "+" : ""}${yoyPct.toFixed(1)}%)</span>`;
         }
         html += "<br/>";
-
         const cyLines = cyItems
           .sort((a, b) => b.value - a.value)
           .map(
             (i) =>
-              `<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${i.color};margin-right:6px;"></span>${i.seriesName}: ${formatCurrency(i.value)}`
+              `<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${i.color};margin-right:6px"></span>${i.seriesName}: ${formatCurrency(i.value)}`
           );
         html += cyLines.join("<br/>");
         if (pyTotal > 0)
@@ -326,11 +400,16 @@ export function SalesTrendChart({ initialData }: { initialData?: TrendResponse |
         option={option}
         style={{ height: 460 }}
         lazyUpdate
-        onEvents={{ click: handleChartClick }}
+        onEvents={{
+          click: handleChartClick,
+          legendselectchanged: handleLegendChange,
+          mouseover: handleSeriesOver,
+          mouseout: handleSeriesOut,
+        }}
       />
       <TrendDetailTable
         data={data}
-        groups={groups}
+        groups={hiddenGroups.size > 0 ? groups.filter((g) => !hiddenGroups.has(g)) : groups}
         getColor={getColor}
         focusedPeriod={focusedPeriod}
         focusedLabel={focusedLabel}
