@@ -6,14 +6,15 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from api.core.config import settings
+from api.core.db import close_mongo
+from api.routers import sales
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup: initialize DB connections
     print(f"Spark Pulse API starting (env={settings.env})")
     yield
-    # Shutdown: close connections
+    close_mongo()
     print("Spark Pulse API shutting down")
 
 
@@ -30,6 +31,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+app.include_router(sales.router)
 
 
 @app.get("/api/health")

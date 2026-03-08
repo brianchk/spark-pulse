@@ -23,7 +23,7 @@ class Settings(BaseSettings):
 
     # MongoDB
     mongodb_uri: str = ""
-    mongodb_db: str = "astro"
+    mongodb_db: str = "astro-transactions"
 
     # NocoDB
     nocodb_host: str = "giselato.com"
