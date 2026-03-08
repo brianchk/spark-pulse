@@ -4,7 +4,8 @@ import { useState, useMemo } from "react";
 import { formatCurrency, formatPercent } from "@/lib/utils/formatters";
 import type { StoreColor } from "@/lib/constants/store-colors";
 
-const COLLAPSE_AFTER = 4;
+const MIN_VISIBLE = 3;
+const MOVER_THRESHOLD = 0.8; // show rows accounting for 80% of total absolute movement
 
 const POP_LABELS: Record<string, string> = {
   daily: "DoD",
@@ -56,7 +57,7 @@ export function TrendDetailTable({
   const primaryLabel = primaryIsYoY ? "YoY" : popLabel;
   const secondaryLabel = primaryIsYoY ? popLabel : "YoY";
 
-  const { gainers, decliners, totalPy, totalYoyDelta, totalPopDelta } = useMemo(() => {
+  const { gainers, decliners, totalPy, totalYoyDelta, totalPopDelta, gainersCutCount, declinersCutCount } = useMemo(() => {
     const all: TableRow[] = [];
     const n = data.labels.length;
 
@@ -126,7 +127,30 @@ export function TrendDetailTable({
       tPopDelta = refTotal - prevTotal;
     }
 
-    return { gainers: g, decliners: d, totalCy: tCy, totalPy: tPy, totalYoyDelta: tYoyDelta, totalPopDelta: tPopDelta };
+    // Compute significant movers — top rows accounting for 80% of total absolute movement
+    const combined = [...g, ...d];
+    const totalAbsDelta = combined.reduce((s, r) => s + Math.abs(r.primaryDelta), 0);
+    const significantNames = new Set<string>();
+    if (totalAbsDelta > 0) {
+      const ranked = [...combined].sort((a, b) => Math.abs(b.primaryDelta) - Math.abs(a.primaryDelta));
+      let cumulative = 0;
+      for (const row of ranked) {
+        significantNames.add(row.name);
+        cumulative += Math.abs(row.primaryDelta);
+        if (cumulative / totalAbsDelta >= MOVER_THRESHOLD) break;
+      }
+    } else {
+      combined.forEach((r) => significantNames.add(r.name));
+    }
+
+    const gCut = Math.max(g.filter((r) => significantNames.has(r.name)).length, MIN_VISIBLE);
+    const dCut = Math.max(d.filter((r) => significantNames.has(r.name)).length, MIN_VISIBLE);
+
+    return {
+      gainers: g, decliners: d, totalPy: tPy,
+      totalYoyDelta: tYoyDelta, totalPopDelta: tPopDelta,
+      gainersCutCount: gCut, declinersCutCount: dCut,
+    };
   }, [data, groups, getColor, focusedPeriod, primaryIsYoY]);
 
   const totalYoyPct = totalPy > 0 ? (totalYoyDelta / totalPy) * 100 : null;
@@ -254,13 +278,14 @@ export function TrendDetailTable({
     panelLabel: string,
     sub: ReturnType<typeof computeSubtotals>,
     isGainPanel: boolean,
+    cutCount: number,
     expanded: boolean,
     setExpanded: (v: boolean) => void,
   ) => {
     const bgClass = isGainPanel ? "bg-emerald-950/30" : "bg-red-950/30";
     const labelClass = isGainPanel ? "text-emerald-400" : "text-red-400";
 
-    const visibleRows = expanded || rows.length <= COLLAPSE_AFTER ? rows : rows.slice(0, COLLAPSE_AFTER);
+    const visibleRows = expanded || rows.length <= cutCount ? rows : rows.slice(0, cutCount);
     const hiddenCount = rows.length - visibleRows.length;
 
     return (
@@ -290,7 +315,7 @@ export function TrendDetailTable({
                     </td>
                   </tr>
                 )}
-                {expanded && rows.length > COLLAPSE_AFTER && (
+                {expanded && rows.length > cutCount && (
                   <tr>
                     <td colSpan={7} className="p-1.5 text-center">
                       <button
@@ -343,8 +368,8 @@ export function TrendDetailTable({
       </div>
 
       <div className="space-y-3">
-        {renderPanel(gainers, "Gainers", gainersSub, true, gainersExpanded, setGainersExpanded)}
-        {renderPanel(decliners, "Decliners", declinersSub, false, declinersExpanded, setDeclinersExpanded)}
+        {renderPanel(gainers, "Gainers", gainersSub, true, gainersCutCount, gainersExpanded, setGainersExpanded)}
+        {renderPanel(decliners, "Decliners", declinersSub, false, declinersCutCount, declinersExpanded, setDeclinersExpanded)}
       </div>
     </div>
   );
