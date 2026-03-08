@@ -1,17 +1,19 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useCallback } from "react";
 import { formatCurrency, formatPercent } from "@/lib/utils/formatters";
 import type { StoreColor } from "@/lib/constants/store-colors";
 
 const MIN_VISIBLE = 3;
-const MOVER_THRESHOLD = 0.8; // show rows accounting for 80% of total absolute movement
+const MOVER_THRESHOLD = 0.8;
 
 const POP_LABELS: Record<string, string> = {
   daily: "DoD",
   weekly: "WoW",
   monthly: "MoM",
 };
+
+type SortKey = "name" | "cy" | "yoyDelta" | "yoyPct" | "popDelta" | "popPct" | "share";
 
 interface TableRow {
   name: string;
@@ -51,11 +53,22 @@ export function TrendDetailTable({
 }: TrendDetailTableProps) {
   const [gainersExpanded, setGainersExpanded] = useState(false);
   const [declinersExpanded, setDeclinersExpanded] = useState(false);
+  const [sortKey, setSortKey] = useState<SortKey | null>(null);
+  const [sortAsc, setSortAsc] = useState(false);
 
   const primaryIsYoY = granularity !== "monthly";
   const popLabel = POP_LABELS[granularity] || "PoP";
-  const primaryLabel = primaryIsYoY ? "YoY" : popLabel;
-  const secondaryLabel = primaryIsYoY ? popLabel : "YoY";
+
+  const handleSort = useCallback((key: SortKey) => {
+    setSortKey((prev) => {
+      if (prev === key) {
+        setSortAsc((a) => !a);
+        return key;
+      }
+      setSortAsc(false); // default desc for new column
+      return key;
+    });
+  }, []);
 
   const { gainers, decliners, totalPy, totalYoyDelta, totalPopDelta, gainersCutCount, declinersCutCount } = useMemo(() => {
     const all: TableRow[] = [];
@@ -74,7 +87,6 @@ export function TrendDetailTable({
         py = n > 0 ? pyArr.reduce((s, v) => s + v, 0) / n : 0;
       }
 
-      // PoP: compare reference period vs previous period
       const refIdx = focusedPeriod ?? n - 1;
       const prevIdx = refIdx - 1;
       let popDelta: number | null = null;
@@ -88,21 +100,9 @@ export function TrendDetailTable({
 
       const yoyDelta = cy - py;
       const yoyPct = py > 0 ? (yoyDelta / py) * 100 : cy > 0 ? 100 : null;
-
       const primaryDelta = primaryIsYoY ? yoyDelta : (popDelta ?? yoyDelta);
 
-      all.push({
-        name: g,
-        cy,
-        py,
-        yoyDelta,
-        yoyPct,
-        popDelta,
-        popPct,
-        primaryDelta,
-        share: 0,
-        color: getColor(g).solid,
-      });
+      all.push({ name: g, cy, py, yoyDelta, yoyPct, popDelta, popPct, primaryDelta, share: 0, color: getColor(g).solid });
     }
 
     const tCy = all.reduce((s, r) => s + Math.max(r.cy, 0), 0);
@@ -111,24 +111,22 @@ export function TrendDetailTable({
       r.share = tCy > 0 ? (Math.max(r.cy, 0) / tCy) * 100 : 0;
     }
 
-    // Split by primary delta
-    const g = all.filter((r) => r.primaryDelta >= 0).sort((a, b) => b.primaryDelta - a.primaryDelta);
-    const d = all.filter((r) => r.primaryDelta < 0).sort((a, b) => a.primaryDelta - b.primaryDelta);
+    // Sort by primary delta for default split, then apply user sort if set
+    const sortRows = (rows: TableRow[]) => {
+      if (!sortKey) return rows;
+      return [...rows].sort((a, b) => {
+        const va = a[sortKey] ?? -Infinity;
+        const vb = b[sortKey] ?? -Infinity;
+        if (typeof va === "string" && typeof vb === "string") return sortAsc ? va.localeCompare(vb) : vb.localeCompare(va);
+        return sortAsc ? (va as number) - (vb as number) : (vb as number) - (va as number);
+      });
+    };
 
-    // Totals
-    const tYoyDelta = tCy - tPy;
-    const n2 = data.labels.length;
-    const refIdx2 = focusedPeriod ?? n2 - 1;
-    const prevIdx2 = refIdx2 - 1;
-    let tPopDelta: number | null = null;
-    if (prevIdx2 >= 0 && refIdx2 < n2) {
-      const refTotal = groups.reduce((s, grp) => s + ((data.cy[grp] || [])[refIdx2] || 0), 0);
-      const prevTotal = groups.reduce((s, grp) => s + ((data.cy[grp] || [])[prevIdx2] || 0), 0);
-      tPopDelta = refTotal - prevTotal;
-    }
+    const gRaw = all.filter((r) => r.primaryDelta >= 0).sort((a, b) => b.primaryDelta - a.primaryDelta);
+    const dRaw = all.filter((r) => r.primaryDelta < 0).sort((a, b) => a.primaryDelta - b.primaryDelta);
 
-    // Compute significant movers — top rows accounting for 80% of total absolute movement
-    const combined = [...g, ...d];
+    // Significant movers — Pareto cutoff
+    const combined = [...gRaw, ...dRaw];
     const totalAbsDelta = combined.reduce((s, r) => s + Math.abs(r.primaryDelta), 0);
     const significantNames = new Set<string>();
     if (totalAbsDelta > 0) {
@@ -143,59 +141,127 @@ export function TrendDetailTable({
       combined.forEach((r) => significantNames.add(r.name));
     }
 
-    const gCut = Math.max(g.filter((r) => significantNames.has(r.name)).length, MIN_VISIBLE);
-    const dCut = Math.max(d.filter((r) => significantNames.has(r.name)).length, MIN_VISIBLE);
+    const gCut = Math.max(gRaw.filter((r) => significantNames.has(r.name)).length, MIN_VISIBLE);
+    const dCut = Math.max(dRaw.filter((r) => significantNames.has(r.name)).length, MIN_VISIBLE);
+
+    const tYoyDelta = tCy - tPy;
+    const refIdx2 = (focusedPeriod ?? data.labels.length - 1);
+    const prevIdx2 = refIdx2 - 1;
+    let tPopDelta: number | null = null;
+    if (prevIdx2 >= 0 && refIdx2 < data.labels.length) {
+      const refTotal = groups.reduce((s, grp) => s + ((data.cy[grp] || [])[refIdx2] || 0), 0);
+      const prevTotal = groups.reduce((s, grp) => s + ((data.cy[grp] || [])[prevIdx2] || 0), 0);
+      tPopDelta = refTotal - prevTotal;
+    }
 
     return {
-      gainers: g, decliners: d, totalPy: tPy,
+      gainers: sortRows(gRaw), decliners: sortRows(dRaw), totalPy: tPy,
       totalYoyDelta: tYoyDelta, totalPopDelta: tPopDelta,
       gainersCutCount: gCut, declinersCutCount: dCut,
     };
-  }, [data, groups, getColor, focusedPeriod, primaryIsYoY]);
+  }, [data, groups, getColor, focusedPeriod, primaryIsYoY, sortKey, sortAsc]);
 
   const totalYoyPct = totalPy > 0 ? (totalYoyDelta / totalPy) * 100 : null;
   const maxAbsDelta = Math.max(...[...gainers, ...decliners].map((r) => Math.abs(r.primaryDelta)), 1);
 
-  // Subtotals per panel
   const computeSubtotals = (rows: TableRow[]) => ({
     cy: rows.reduce((s, r) => s + r.cy, 0),
     py: rows.reduce((s, r) => s + r.py, 0),
     yoyDelta: rows.reduce((s, r) => s + r.yoyDelta, 0),
-    popDelta: rows.some((r) => r.popDelta !== null)
-      ? rows.reduce((s, r) => s + (r.popDelta ?? 0), 0)
-      : null,
+    yoyPct: (() => {
+      const py = rows.reduce((s, r) => s + r.py, 0);
+      const delta = rows.reduce((s, r) => s + r.yoyDelta, 0);
+      return py > 0 ? (delta / py) * 100 : null;
+    })(),
+    popDelta: rows.some((r) => r.popDelta !== null) ? rows.reduce((s, r) => s + (r.popDelta ?? 0), 0) : null,
+    popPct: (() => {
+      if (!rows.some((r) => r.popDelta !== null)) return null;
+      const cy = rows.reduce((s, r) => s + r.cy, 0);
+      const popD = rows.reduce((s, r) => s + (r.popDelta ?? 0), 0);
+      const prior = cy - popD;
+      return prior > 0 ? (popD / prior) * 100 : null;
+    })(),
     share: rows.reduce((s, r) => s + r.share, 0),
   });
 
   const gainersSub = computeSubtotals(gainers);
   const declinersSub = computeSubtotals(decliners);
 
-  const deltaCell = (delta: number | null, pct: number | null, isPrimary: boolean) => {
+  const deltaVal = (delta: number | null) => {
     if (delta === null) return <span className="text-muted-foreground">{"\u2014"}</span>;
     const isGain = delta >= 0;
     const clr = isGain ? "#4ade80" : "#f87171";
     return (
-      <div className={isPrimary ? "" : "opacity-50"}>
-        <div className="tabular-nums" style={{ color: clr }}>
-          {isGain ? "+" : "-"}
-          {formatCurrency(Math.abs(delta))}
-        </div>
-        <div className="text-[10px] tabular-nums" style={{ color: clr }}>
-          {pct !== null ? formatPercent(pct, true) : "\u2014"}
-        </div>
-      </div>
+      <span className="tabular-nums" style={{ color: clr }}>
+        {isGain ? "+" : "-"}{formatCurrency(Math.abs(delta))}
+      </span>
     );
   };
+
+  const pctVal = (pct: number | null) => {
+    if (pct === null) return <span className="text-muted-foreground">{"\u2014"}</span>;
+    const clr = pct >= 0 ? "#4ade80" : "#f87171";
+    return <span className="tabular-nums" style={{ color: clr }}>{formatPercent(pct, true)}</span>;
+  };
+
+  const sortIndicator = (key: SortKey) => {
+    if (sortKey !== key) return null;
+    return <span className="ml-0.5 text-[10px]">{sortAsc ? "\u25b4" : "\u25be"}</span>;
+  };
+
+  // Default sort indicator on primary delta column when no user sort
+  const defaultSortMark = (key: SortKey) => {
+    if (sortKey !== null) return null;
+    const isPrimaryDelta = (primaryIsYoY && key === "yoyDelta") || (!primaryIsYoY && key === "popDelta");
+    if (!isPrimaryDelta) return null;
+    return <span className="ml-0.5 text-[10px]">{"\u25be"}</span>;
+  };
+
+  const thClass = "p-1.5 text-right text-xs font-medium cursor-pointer select-none hover:text-foreground transition-colors";
+  const secondaryThClass = `${thClass} hidden lg:table-cell opacity-50`;
+
+  const primaryDeltaKey: SortKey = primaryIsYoY ? "yoyDelta" : "popDelta";
+  const primaryPctKey: SortKey = primaryIsYoY ? "yoyPct" : "popPct";
+  const secondaryDeltaKey: SortKey = primaryIsYoY ? "popDelta" : "yoyDelta";
+  const secondaryPctKey: SortKey = primaryIsYoY ? "popPct" : "yoyPct";
+  const primaryLabel = primaryIsYoY ? "YoY" : popLabel;
+  const secondaryLabel = primaryIsYoY ? popLabel : "YoY";
+
+  const COL_COUNT = 10; // color + name + cy + bar + primary$ + primary% + secondary$ + secondary% + share (+ 1 for responsive hiding doesn't change colspan for full)
+
+  const tableHeader = (
+    <tr className="border-b border-border bg-muted/30 text-muted-foreground">
+      <th className="w-7 p-1.5" />
+      <th className={`p-1.5 text-left text-xs font-medium cursor-pointer select-none hover:text-foreground transition-colors`} onClick={() => handleSort("name")}>
+        Name{sortIndicator("name")}
+      </th>
+      <th className={thClass} onClick={() => handleSort("cy")}>CY Avg{sortIndicator("cy")}</th>
+      <th className="w-14 p-1.5" />
+      <th className={thClass} onClick={() => handleSort(primaryDeltaKey)}>
+        {primaryLabel} ${sortIndicator(primaryDeltaKey)}{defaultSortMark(primaryDeltaKey)}
+      </th>
+      <th className={thClass} onClick={() => handleSort(primaryPctKey)}>
+        {primaryLabel} %{sortIndicator(primaryPctKey)}
+      </th>
+      <th className={secondaryThClass} onClick={() => handleSort(secondaryDeltaKey)}>
+        {secondaryLabel} ${sortIndicator(secondaryDeltaKey)}
+      </th>
+      <th className={secondaryThClass} onClick={() => handleSort(secondaryPctKey)}>
+        {secondaryLabel} %{sortIndicator(secondaryPctKey)}
+      </th>
+      <th className={thClass} onClick={() => handleSort("share")}>Share{sortIndicator("share")}</th>
+    </tr>
+  );
 
   const renderRow = (row: TableRow) => {
     const barWidth = Math.min((Math.abs(row.primaryDelta) / maxAbsDelta) * 100, 100);
     const isGain = row.primaryDelta >= 0;
     const barClr = isGain ? "#4ade80" : "#f87171";
 
-    const primaryDelta = primaryIsYoY ? row.yoyDelta : row.popDelta;
-    const primaryPct = primaryIsYoY ? row.yoyPct : row.popPct;
-    const secondaryDelta = primaryIsYoY ? row.popDelta : row.yoyDelta;
-    const secondaryPct = primaryIsYoY ? row.popPct : row.yoyPct;
+    const pDelta = primaryIsYoY ? row.yoyDelta : row.popDelta;
+    const pPct = primaryIsYoY ? row.yoyPct : row.popPct;
+    const sDelta = primaryIsYoY ? row.popDelta : row.yoyDelta;
+    const sPct = primaryIsYoY ? row.popPct : row.yoyPct;
 
     return (
       <tr
@@ -209,66 +275,41 @@ export function TrendDetailTable({
         </td>
         <td className="p-1.5 font-medium text-card-foreground">{row.name}</td>
         <td className="p-1.5 text-right tabular-nums">{formatCurrency(row.cy)}</td>
-        <td className="w-16 p-1.5">
-          <div className="flex items-center gap-1">
-            <div
-              className="h-2.5 rounded-sm"
-              style={{
-                width: `${barWidth}%`,
-                backgroundColor: barClr,
-                minWidth: row.primaryDelta !== 0 ? 3 : 0,
-              }}
-            />
-          </div>
+        <td className="w-14 p-1.5">
+          <div
+            className="h-2.5 rounded-sm"
+            style={{ width: `${barWidth}%`, backgroundColor: barClr, minWidth: row.primaryDelta !== 0 ? 3 : 0 }}
+          />
         </td>
-        <td className="p-1.5 text-right">{deltaCell(primaryDelta ?? null, primaryPct ?? null, true)}</td>
-        <td className="p-1.5 text-right">{deltaCell(secondaryDelta ?? null, secondaryPct ?? null, false)}</td>
+        <td className="p-1.5 text-right">{deltaVal(pDelta)}</td>
+        <td className="p-1.5 text-right">{pctVal(pPct)}</td>
+        <td className="p-1.5 text-right hidden lg:table-cell opacity-50">{deltaVal(sDelta)}</td>
+        <td className="p-1.5 text-right hidden lg:table-cell opacity-50">{pctVal(sPct)}</td>
         <td className="p-1.5 text-right tabular-nums text-muted-foreground">{row.share.toFixed(0)}%</td>
       </tr>
     );
   };
 
-  const tableHeader = (
-    <tr className="border-b border-border bg-muted/30 text-muted-foreground">
-      <th className="w-7 p-1.5" />
-      <th className="p-1.5 text-left text-xs font-medium">Name</th>
-      <th className="p-1.5 text-right text-xs font-medium">CY Avg</th>
-      <th className="w-16 p-1.5" />
-      <th className="p-1.5 text-right text-xs font-medium">
-        {primaryLabel} <span className="text-[10px]">&#9662;</span>
-      </th>
-      <th className="p-1.5 text-right text-xs font-medium opacity-50">{secondaryLabel}</th>
-      <th className="p-1.5 text-right text-xs font-medium">Share</th>
-    </tr>
-  );
-
   const renderSummaryRow = (
     label: string,
-    cy: number,
-    py: number,
-    yoyDelta: number,
-    popDelta: number | null,
-    share: number,
+    sub: ReturnType<typeof computeSubtotals>,
   ) => {
-    const yoyPct = py > 0 ? (yoyDelta / py) * 100 : null;
-    // PoP pct for subtotal: need prior period subtotal — approximate from delta / (cy - delta)
-    const popPrior = popDelta !== null ? cy - popDelta : null;
-    const popPct = popPrior !== null && popPrior > 0 ? (popDelta! / popPrior) * 100 : null;
-
-    const primaryD = primaryIsYoY ? yoyDelta : popDelta;
-    const primaryP = primaryIsYoY ? yoyPct : popPct;
-    const secondaryD = primaryIsYoY ? popDelta : yoyDelta;
-    const secondaryP = primaryIsYoY ? popPct : yoyPct;
+    const pDelta = primaryIsYoY ? sub.yoyDelta : sub.popDelta;
+    const pPct = primaryIsYoY ? sub.yoyPct : sub.popPct;
+    const sDelta = primaryIsYoY ? sub.popDelta : sub.yoyDelta;
+    const sPct = primaryIsYoY ? sub.popPct : sub.yoyPct;
 
     return (
       <tr className="border-b border-border bg-muted/20 font-medium">
         <td className="p-1.5" />
         <td className="p-1.5 text-card-foreground">{label}</td>
-        <td className="p-1.5 text-right tabular-nums">{formatCurrency(cy)}</td>
-        <td className="w-16 p-1.5" />
-        <td className="p-1.5 text-right">{deltaCell(primaryD ?? null, primaryP ?? null, true)}</td>
-        <td className="p-1.5 text-right">{deltaCell(secondaryD ?? null, secondaryP ?? null, false)}</td>
-        <td className="p-1.5 text-right tabular-nums text-muted-foreground">{share.toFixed(0)}%</td>
+        <td className="p-1.5 text-right tabular-nums">{formatCurrency(sub.cy)}</td>
+        <td className="w-14 p-1.5" />
+        <td className="p-1.5 text-right">{deltaVal(pDelta)}</td>
+        <td className="p-1.5 text-right">{pctVal(pPct)}</td>
+        <td className="p-1.5 text-right hidden lg:table-cell opacity-50">{deltaVal(sDelta)}</td>
+        <td className="p-1.5 text-right hidden lg:table-cell opacity-50">{pctVal(sPct)}</td>
+        <td className="p-1.5 text-right tabular-nums text-muted-foreground">{sub.share.toFixed(0)}%</td>
       </tr>
     );
   };
@@ -284,16 +325,13 @@ export function TrendDetailTable({
   ) => {
     const bgClass = isGainPanel ? "bg-emerald-950/30" : "bg-red-950/30";
     const labelClass = isGainPanel ? "text-emerald-400" : "text-red-400";
-
     const visibleRows = expanded || rows.length <= cutCount ? rows : rows.slice(0, cutCount);
     const hiddenCount = rows.length - visibleRows.length;
 
     return (
       <div className="rounded-md border border-border">
         <div className={`border-b border-border ${bgClass} px-3 py-1.5`}>
-          <span className={`text-xs font-semibold uppercase tracking-wide ${labelClass}`}>
-            {panelLabel}
-          </span>
+          <span className={`text-xs font-semibold uppercase tracking-wide ${labelClass}`}>{panelLabel}</span>
           <span className="ml-2 text-xs text-muted-foreground">({rows.length})</span>
         </div>
         <table className="w-full text-sm">
@@ -301,15 +339,12 @@ export function TrendDetailTable({
           <tbody>
             {rows.length > 0 ? (
               <>
-                {renderSummaryRow("Subtotal", sub.cy, sub.py, sub.yoyDelta, sub.popDelta, sub.share)}
+                {renderSummaryRow("Subtotal", sub)}
                 {visibleRows.map(renderRow)}
                 {hiddenCount > 0 && (
                   <tr>
-                    <td colSpan={7} className="p-1.5 text-center">
-                      <button
-                        onClick={() => setExpanded(true)}
-                        className="text-xs text-muted-foreground hover:text-foreground transition-colors"
-                      >
+                    <td colSpan={COL_COUNT} className="p-1.5 text-center">
+                      <button onClick={() => setExpanded(true)} className="text-xs text-muted-foreground hover:text-foreground transition-colors">
                         Show {hiddenCount} more...
                       </button>
                     </td>
@@ -317,11 +352,8 @@ export function TrendDetailTable({
                 )}
                 {expanded && rows.length > cutCount && (
                   <tr>
-                    <td colSpan={7} className="p-1.5 text-center">
-                      <button
-                        onClick={() => setExpanded(false)}
-                        className="text-xs text-muted-foreground hover:text-foreground transition-colors"
-                      >
+                    <td colSpan={COL_COUNT} className="p-1.5 text-center">
+                      <button onClick={() => setExpanded(false)} className="text-xs text-muted-foreground hover:text-foreground transition-colors">
                         Collapse
                       </button>
                     </td>
@@ -330,9 +362,7 @@ export function TrendDetailTable({
               </>
             ) : (
               <tr>
-                <td colSpan={7} className="p-3 text-center text-muted-foreground">
-                  No {panelLabel.toLowerCase()}
-                </td>
+                <td colSpan={COL_COUNT} className="p-3 text-center text-muted-foreground">No {panelLabel.toLowerCase()}</td>
               </tr>
             )}
           </tbody>
@@ -350,8 +380,7 @@ export function TrendDetailTable({
         <p className="text-sm text-muted-foreground">
           {focusedPeriod !== null ? (
             <>
-              <strong className="text-foreground">{focusedLabel}</strong> &middot; Click bar again to
-              deselect
+              <strong className="text-foreground">{focusedLabel}</strong> &middot; Click bar again to deselect
             </>
           ) : (
             "All periods \u00b7 Click a bar to focus"
