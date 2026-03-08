@@ -25,7 +25,9 @@ export default async function Home() {
         <div>
           <h1 className="text-xl font-semibold text-foreground">
             Spark Pulse
-            <span className="ml-2 text-[10px] font-normal text-muted-foreground/60">{process.env.BUILD_HASH}</span>
+            <span className="ml-2 text-[10px] font-normal text-muted-foreground/60">
+              #{process.env.BUILD_NUM} ({process.env.BUILD_HASH}) {process.env.BUILD_TIME}
+            </span>
           </h1>
           <p className="text-sm text-muted-foreground">PB Group — Retail Dashboard</p>
         </div>
