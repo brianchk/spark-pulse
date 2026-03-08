@@ -23,7 +23,10 @@ export default async function Home() {
     <div className="min-h-screen bg-background">
       <header className="flex items-center justify-between border-b border-border px-6 py-4">
         <div>
-          <h1 className="text-xl font-semibold text-foreground">Spark Pulse</h1>
+          <h1 className="text-xl font-semibold text-foreground">
+            Spark Pulse
+            <span className="ml-2 text-[10px] font-normal text-muted-foreground/60">{process.env.BUILD_HASH}</span>
+          </h1>
           <p className="text-sm text-muted-foreground">PB Group — Retail Dashboard</p>
         </div>
         <ThemeToggle />
