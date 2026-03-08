@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useCallback } from "react";
+import { Fragment, useState, useMemo, useCallback } from "react";
 import { formatCurrency, formatPercent } from "@/lib/utils/formatters";
 import type { StoreColor } from "@/lib/constants/store-colors";
 
@@ -65,7 +65,7 @@ export function TrendDetailTable({
         setSortAsc((a) => !a);
         return key;
       }
-      setSortAsc(false); // default desc for new column
+      setSortAsc(false);
       return key;
     });
   }, []);
@@ -111,7 +111,6 @@ export function TrendDetailTable({
       r.share = tCy > 0 ? (Math.max(r.cy, 0) / tCy) * 100 : 0;
     }
 
-    // Sort by primary delta for default split, then apply user sort if set
     const sortRows = (rows: TableRow[]) => {
       if (!sortKey) return rows;
       return [...rows].sort((a, b) => {
@@ -125,7 +124,6 @@ export function TrendDetailTable({
     const gRaw = all.filter((r) => r.primaryDelta >= 0).sort((a, b) => b.primaryDelta - a.primaryDelta);
     const dRaw = all.filter((r) => r.primaryDelta < 0).sort((a, b) => a.primaryDelta - b.primaryDelta);
 
-    // Significant movers — Pareto cutoff
     const combined = [...gRaw, ...dRaw];
     const totalAbsDelta = combined.reduce((s, r) => s + Math.abs(r.primaryDelta), 0);
     const significantNames = new Set<string>();
@@ -145,7 +143,7 @@ export function TrendDetailTable({
     const dCut = Math.max(dRaw.filter((r) => significantNames.has(r.name)).length, MIN_VISIBLE);
 
     const tYoyDelta = tCy - tPy;
-    const refIdx2 = (focusedPeriod ?? data.labels.length - 1);
+    const refIdx2 = focusedPeriod ?? data.labels.length - 1;
     const prevIdx2 = refIdx2 - 1;
     let tPopDelta: number | null = null;
     if (prevIdx2 >= 0 && refIdx2 < data.labels.length) {
@@ -209,7 +207,6 @@ export function TrendDetailTable({
     return <span className="ml-0.5 text-[10px]">{sortAsc ? "\u25b4" : "\u25be"}</span>;
   };
 
-  // Default sort indicator on primary delta column when no user sort
   const defaultSortMark = (key: SortKey) => {
     if (sortKey !== null) return null;
     const isPrimaryDelta = (primaryIsYoY && key === "yoyDelta") || (!primaryIsYoY && key === "popDelta");
@@ -217,8 +214,9 @@ export function TrendDetailTable({
     return <span className="ml-0.5 text-[10px]">{"\u25be"}</span>;
   };
 
-  const thClass = "p-1.5 text-right text-xs font-medium cursor-pointer select-none hover:text-foreground transition-colors";
-  const secondaryThClass = `${thClass} hidden lg:table-cell opacity-50`;
+  const thSort = "p-1.5 text-right text-xs font-medium cursor-pointer select-none hover:text-foreground transition-colors";
+  // Columns hidden on narrow, shown on desktop — bar and % columns
+  const thDesktopOnly = `${thSort} hidden lg:table-cell`;
 
   const primaryDeltaKey: SortKey = primaryIsYoY ? "yoyDelta" : "popDelta";
   const primaryPctKey: SortKey = primaryIsYoY ? "yoyPct" : "popPct";
@@ -227,29 +225,31 @@ export function TrendDetailTable({
   const primaryLabel = primaryIsYoY ? "YoY" : popLabel;
   const secondaryLabel = primaryIsYoY ? popLabel : "YoY";
 
-  const COL_COUNT = 10; // color + name + cy + bar + primary$ + primary% + secondary$ + secondary% + share (+ 1 for responsive hiding doesn't change colspan for full)
+  // Desktop: 9 cols (color, name, cy, bar, prim$, prim%, sec$, sec%, share)
+  // Narrow:  6 cols (color, name, cy, prim$, sec$, share) — bar/prim%/sec% hidden
+  const COL_SPAN_ALL = 9;
 
   const tableHeader = (
     <tr className="border-b border-border bg-muted/30 text-muted-foreground">
       <th className="w-7 p-1.5" />
-      <th className={`p-1.5 text-left text-xs font-medium cursor-pointer select-none hover:text-foreground transition-colors`} onClick={() => handleSort("name")}>
+      <th className="p-1.5 text-left text-xs font-medium cursor-pointer select-none hover:text-foreground transition-colors" onClick={() => handleSort("name")}>
         Name{sortIndicator("name")}
       </th>
-      <th className={thClass} onClick={() => handleSort("cy")}>CY Avg{sortIndicator("cy")}</th>
-      <th className="w-14 p-1.5" />
-      <th className={thClass} onClick={() => handleSort(primaryDeltaKey)}>
+      <th className={thSort} onClick={() => handleSort("cy")}>CY Avg{sortIndicator("cy")}</th>
+      <th className="w-14 p-1.5 hidden lg:table-cell" />
+      <th className={thSort} onClick={() => handleSort(primaryDeltaKey)}>
         {primaryLabel} ${sortIndicator(primaryDeltaKey)}{defaultSortMark(primaryDeltaKey)}
       </th>
-      <th className={thClass} onClick={() => handleSort(primaryPctKey)}>
+      <th className={thDesktopOnly} onClick={() => handleSort(primaryPctKey)}>
         {primaryLabel} %{sortIndicator(primaryPctKey)}
       </th>
-      <th className={secondaryThClass} onClick={() => handleSort(secondaryDeltaKey)}>
+      <th className={`${thSort} opacity-50`} onClick={() => handleSort(secondaryDeltaKey)}>
         {secondaryLabel} ${sortIndicator(secondaryDeltaKey)}
       </th>
-      <th className={secondaryThClass} onClick={() => handleSort(secondaryPctKey)}>
+      <th className={`${thDesktopOnly} opacity-50`} onClick={() => handleSort(secondaryPctKey)}>
         {secondaryLabel} %{sortIndicator(secondaryPctKey)}
       </th>
-      <th className={thClass} onClick={() => handleSort("share")}>Share{sortIndicator("share")}</th>
+      <th className={thSort} onClick={() => handleSort("share")}>Share{sortIndicator("share")}</th>
     </tr>
   );
 
@@ -264,53 +264,79 @@ export function TrendDetailTable({
     const sPct = primaryIsYoY ? row.popPct : row.yoyPct;
 
     return (
-      <tr
-        key={row.name}
-        className="border-b border-border/40 transition-colors hover:bg-muted/40"
-        onMouseEnter={() => onGroupHover(row.name)}
-        onMouseLeave={() => onGroupHover(null)}
-      >
-        <td className="p-1.5 text-center">
-          <span className="inline-block h-3 w-3 rounded-sm" style={{ backgroundColor: row.color }} />
-        </td>
-        <td className="p-1.5 font-medium text-card-foreground">{row.name}</td>
-        <td className="p-1.5 text-right tabular-nums">{formatCurrency(row.cy)}</td>
-        <td className="w-14 p-1.5">
-          <div
-            className="h-2.5 rounded-sm"
-            style={{ width: `${barWidth}%`, backgroundColor: barClr, minWidth: row.primaryDelta !== 0 ? 3 : 0 }}
-          />
-        </td>
-        <td className="p-1.5 text-right">{deltaVal(pDelta)}</td>
-        <td className="p-1.5 text-right">{pctVal(pPct)}</td>
-        <td className="p-1.5 text-right hidden lg:table-cell opacity-50">{deltaVal(sDelta)}</td>
-        <td className="p-1.5 text-right hidden lg:table-cell opacity-50">{pctVal(sPct)}</td>
-        <td className="p-1.5 text-right tabular-nums text-muted-foreground">{row.share.toFixed(0)}%</td>
-      </tr>
+      <Fragment key={row.name}>
+        {/* Row 1: always visible — data row */}
+        <tr
+          className="border-b border-border/40 lg:border-b transition-colors hover:bg-muted/40 group"
+          onMouseEnter={() => onGroupHover(row.name)}
+          onMouseLeave={() => onGroupHover(null)}
+        >
+          <td className="p-1.5 text-center">
+            <span className="inline-block h-3 w-3 rounded-sm" style={{ backgroundColor: row.color }} />
+          </td>
+          <td className="p-1.5 font-medium text-card-foreground">{row.name}</td>
+          <td className="p-1.5 text-right tabular-nums">{formatCurrency(row.cy)}</td>
+          <td className="w-14 p-1.5 hidden lg:table-cell">
+            <div
+              className="h-2.5 rounded-sm"
+              style={{ width: `${barWidth}%`, backgroundColor: barClr, minWidth: row.primaryDelta !== 0 ? 3 : 0 }}
+            />
+          </td>
+          <td className="p-1.5 text-right">{deltaVal(pDelta)}</td>
+          <td className="p-1.5 text-right hidden lg:table-cell">{pctVal(pPct)}</td>
+          <td className="p-1.5 text-right opacity-50">{deltaVal(sDelta)}</td>
+          <td className="p-1.5 text-right hidden lg:table-cell opacity-50">{pctVal(sPct)}</td>
+          <td className="p-1.5 text-right tabular-nums text-muted-foreground">{row.share.toFixed(0)}%</td>
+        </tr>
+        {/* Row 2: narrow only — context (bar, primary %, secondary %) */}
+        <tr
+          className="border-b border-border/40 lg:hidden group-hover:bg-muted/40"
+          onMouseEnter={() => onGroupHover(row.name)}
+          onMouseLeave={() => onGroupHover(null)}
+        >
+          <td colSpan={2} className="pb-1.5 px-1.5" />
+          <td className="pb-1.5 px-1.5">
+            <div
+              className="h-2 rounded-sm"
+              style={{ width: `${barWidth}%`, backgroundColor: barClr, minWidth: row.primaryDelta !== 0 ? 3 : 0 }}
+            />
+          </td>
+          <td className="pb-1.5 px-1.5 text-right text-xs text-muted-foreground">{pctVal(pPct)}</td>
+          <td className="pb-1.5 px-1.5 text-right text-xs text-muted-foreground opacity-50">{pctVal(sPct)}</td>
+          <td className="pb-1.5 px-1.5" />
+        </tr>
+      </Fragment>
     );
   };
 
-  const renderSummaryRow = (
-    label: string,
-    sub: ReturnType<typeof computeSubtotals>,
-  ) => {
+  const renderSummaryRow = (label: string, sub: ReturnType<typeof computeSubtotals>) => {
     const pDelta = primaryIsYoY ? sub.yoyDelta : sub.popDelta;
     const pPct = primaryIsYoY ? sub.yoyPct : sub.popPct;
     const sDelta = primaryIsYoY ? sub.popDelta : sub.yoyDelta;
     const sPct = primaryIsYoY ? sub.popPct : sub.yoyPct;
 
     return (
-      <tr className="border-b border-border bg-muted/20 font-medium">
-        <td className="p-1.5" />
-        <td className="p-1.5 text-card-foreground">{label}</td>
-        <td className="p-1.5 text-right tabular-nums">{formatCurrency(sub.cy)}</td>
-        <td className="w-14 p-1.5" />
-        <td className="p-1.5 text-right">{deltaVal(pDelta)}</td>
-        <td className="p-1.5 text-right">{pctVal(pPct)}</td>
-        <td className="p-1.5 text-right hidden lg:table-cell opacity-50">{deltaVal(sDelta)}</td>
-        <td className="p-1.5 text-right hidden lg:table-cell opacity-50">{pctVal(sPct)}</td>
-        <td className="p-1.5 text-right tabular-nums text-muted-foreground">{sub.share.toFixed(0)}%</td>
-      </tr>
+      <Fragment key={`summary-${label}`}>
+        <tr className="border-b border-border bg-muted/20 font-medium">
+          <td className="p-1.5" />
+          <td className="p-1.5 text-card-foreground">{label}</td>
+          <td className="p-1.5 text-right tabular-nums">{formatCurrency(sub.cy)}</td>
+          <td className="w-14 p-1.5 hidden lg:table-cell" />
+          <td className="p-1.5 text-right">{deltaVal(pDelta)}</td>
+          <td className="p-1.5 text-right hidden lg:table-cell">{pctVal(pPct)}</td>
+          <td className="p-1.5 text-right opacity-50">{deltaVal(sDelta)}</td>
+          <td className="p-1.5 text-right hidden lg:table-cell opacity-50">{pctVal(sPct)}</td>
+          <td className="p-1.5 text-right tabular-nums text-muted-foreground">{sub.share.toFixed(0)}%</td>
+        </tr>
+        {/* Summary context row — narrow only */}
+        <tr className="border-b border-border bg-muted/20 font-medium lg:hidden">
+          <td colSpan={2} className="pb-1.5 px-1.5" />
+          <td className="pb-1.5 px-1.5" />
+          <td className="pb-1.5 px-1.5 text-right text-xs text-muted-foreground">{pctVal(pPct)}</td>
+          <td className="pb-1.5 px-1.5 text-right text-xs text-muted-foreground opacity-50">{pctVal(sPct)}</td>
+          <td className="pb-1.5 px-1.5" />
+        </tr>
+      </Fragment>
     );
   };
 
@@ -343,7 +369,7 @@ export function TrendDetailTable({
                 {visibleRows.map(renderRow)}
                 {hiddenCount > 0 && (
                   <tr>
-                    <td colSpan={COL_COUNT} className="p-1.5 text-center">
+                    <td colSpan={COL_SPAN_ALL} className="p-1.5 text-center">
                       <button onClick={() => setExpanded(true)} className="text-xs text-muted-foreground hover:text-foreground transition-colors">
                         Show {hiddenCount} more...
                       </button>
@@ -352,7 +378,7 @@ export function TrendDetailTable({
                 )}
                 {expanded && rows.length > cutCount && (
                   <tr>
-                    <td colSpan={COL_COUNT} className="p-1.5 text-center">
+                    <td colSpan={COL_SPAN_ALL} className="p-1.5 text-center">
                       <button onClick={() => setExpanded(false)} className="text-xs text-muted-foreground hover:text-foreground transition-colors">
                         Collapse
                       </button>
@@ -362,7 +388,7 @@ export function TrendDetailTable({
               </>
             ) : (
               <tr>
-                <td colSpan={COL_COUNT} className="p-3 text-center text-muted-foreground">No {panelLabel.toLowerCase()}</td>
+                <td colSpan={COL_SPAN_ALL} className="p-3 text-center text-muted-foreground">No {panelLabel.toLowerCase()}</td>
               </tr>
             )}
           </tbody>
